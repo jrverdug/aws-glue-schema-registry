@@ -46,9 +46,14 @@ import software.amazon.awssdk.services.s3.model.GetObjectTaggingResponse;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.Tag;
 
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
+import java.util.Optional;
 import java.util.StringJoiner;
 import java.util.UUID;
 
@@ -86,7 +91,7 @@ public class AWSSchemaRegistryClient {
     		urlConnectionHttpClientBuilder.proxyConfiguration(proxy);
         }
 
-        GlueClientBuilder glueClientBuilder = GlueClient
+        S3ClientBuilder s3ClientBuilder = S3Client
                 .builder()
                 .credentialsProvider(credentialsProvider)
                 .overrideConfiguration(overrideConfiguration)
@@ -95,14 +100,14 @@ public class AWSSchemaRegistryClient {
 
         if (glueSchemaRegistryConfiguration.getEndPoint() != null) {
             try {
-                glueClientBuilder.endpointOverride(new URI(glueSchemaRegistryConfiguration.getEndPoint()));
+                s3ClientBuilder.endpointOverride(new URI(glueSchemaRegistryConfiguration.getEndPoint()));
             } catch (URISyntaxException e) {
                 String message = String.format("Malformed uri, please pass the valid uri for creating the client",
                                                glueSchemaRegistryConfiguration.getEndPoint());
                 throw new AWSSchemaRegistryException(message, e);
             }
         }
-        this.client = glueClientBuilder.build();
+        this.s3Client = s3ClientBuilder.build();
     }
 
     /**
@@ -117,56 +122,79 @@ public class AWSSchemaRegistryClient {
         this(credentialsProvider, glueSchemaRegistryConfiguration, RetryPolicy.defaultRetryPolicy());
     }
 
-    public AWSSchemaRegistryClient(@NonNull GlueClient glueClient) {
-        this.client = glueClient;
+    public AWSSchemaRegistryClient(@NonNull S3Client s3Client) {
+        this.s3Client = s3Client;
     }
 
     /**
      * Get Schema Version ID by passing the schema definition.
-     * @param schemaDefinition Schema Definition
-     * @param schemaName       Schema Name
-     * @param dataFormat       Data Format
-     * @return                 Schema Version ID
-     * @throws AWSSchemaRegistryException on any error while fetching the schema version ID
+     * 
+     * @param schemaDefinition Schema Definition - IGNORED in S3 mode
+     * @param schemaName       Schema Name - IGNORED in S3 mode  
+     * @param dataFormat       Data Format - IGNORED in S3 mode
+     * @return                 Schema Version ID from S3 gsr-version-id tag
+     * @throws AWSSchemaRegistryException S3 mode doesn't support schema lookup by definition.
+     *                                   Use getSchemaVersionResponse() to fetch from S3.
      */
     public UUID getSchemaVersionIdByDefinition(@NonNull String schemaDefinition, @NonNull String schemaName,
                                                @NonNull String dataFormat) throws AWSSchemaRegistryException {
-        try {
-            String message = String.format(
-                    "Getting Schema Version Id for : schemaDefinition = %s, schemaName = %s, dataFormat = %s",
-                    schemaDefinition, schemaName, dataFormat);
-            log.debug(message);
-            GetSchemaByDefinitionResponse response = null;
-            response = client.getSchemaByDefinition(buildGetSchemaByDefinitionRequest(schemaDefinition, schemaName));
-            return returnSchemaVersionIdIfAvailable(response);
-        } catch (Exception e) {
-            String message = String.format("Failed to get schemaVersionId by schema definition for schema name = %s ", schemaName);
-            throw new AWSSchemaRegistryException(message, e);
-        }
+        throw new AWSSchemaRegistryException(
+            "getSchemaVersionIdByDefinition is not supported in S3 mode. " +
+            "S3 mode is read-only and fetches schema from a fixed location. " +
+            "Use getSchemaVersionResponse() to fetch schema from S3 instead."
+        );
     }
 
     /**
-     * Get the schema definition by passing the schema id.
+     * Get the schema definition by fetching schema.avsc from S3 and reading gsr-version-id tag.
      *
-     * @param schemaVersionId schema version id
-     * @return                schema definition returns the schema definition corresponding to the
-     *                        schema id passed and null in case service is not able to found the
-     *                        schema definition corresponding to schema id.
-     * @throws AWSSchemaRegistryException on any errors during schema retrieval from service
+     * @param schemaVersionId IGNORED in S3 mode - kept for backwards compatibility with API contract.
+     *                        The actual UUID is read from the gsr-version-id tag on the S3 object.
+     * @return                schema definition from S3 with UUID from gsr-version-id tag
+     * @throws AWSSchemaRegistryException on any errors during schema retrieval from S3
      */
     public GetSchemaVersionResponse getSchemaVersionResponse(@NonNull String schemaVersionId)
             throws AWSSchemaRegistryException {
-        GetSchemaVersionResponse schemaVersionResponse = null;
-
         try {
-            schemaVersionResponse = client.getSchemaVersion(getSchemaVersionRequest(schemaVersionId));
-            validateSchemaVersionResponse(schemaVersionResponse, schemaVersionId);
+            String s3Key = buildS3SchemaKey();
+            
+            log.debug("Fetching schema from S3: s3://{}/{}", 
+                    glueSchemaRegistryConfiguration.getS3BucketName(), s3Key);
+            
+            // Fetch schema.avsc content from S3
+            GetObjectRequest getObjectRequest = GetObjectRequest.builder()
+                    .bucket(glueSchemaRegistryConfiguration.getS3BucketName())
+                    .key(s3Key)
+                    .build();
+
+            byte[] schemaBytes = s3Client.getObject(getObjectRequest).readAllBytes();
+            String schemaDefinition = new String(schemaBytes, StandardCharsets.UTF_8);
+
+            // Fetch gsr-version-id from S3 object tags
+            GetObjectTaggingRequest taggingRequest = GetObjectTaggingRequest.builder()
+                    .bucket(glueSchemaRegistryConfiguration.getS3BucketName())
+                    .key(s3Key)
+                    .build();
+            
+            GetObjectTaggingResponse taggingResponse = s3Client.getObjectTagging(taggingRequest);
+            String gsrVersionId = getTagValue(taggingResponse, "gsr-version-id")
+                    .orElseThrow(() -> new AWSSchemaRegistryException("gsr-version-id tag not found on S3 object"));
+
+            // Build response compatible with Glue format using the UUID from the tag
+            return GetSchemaVersionResponse.builder()
+                    .schemaVersionId(gsrVersionId)
+                    .schemaDefinition(schemaDefinition)
+                    .dataFormat("AVRO")
+                    .build();
+
+        } catch (NoSuchKeyException e) {
+            String errorMessage = String.format("Schema file not found in S3: s3://%s/%s", 
+                    glueSchemaRegistryConfiguration.getS3BucketName(), buildS3SchemaKey());
+            throw new AWSSchemaRegistryException(errorMessage, e);
         } catch (Exception e) {
-            String errorMessage = String.format("Failed to get schema version Id = %s", schemaVersionId);
+            String errorMessage = String.format("Failed to get schema from S3: %s", e.getMessage());
             throw new AWSSchemaRegistryException(errorMessage, e);
         }
-
-        return schemaVersionResponse;
     }
 
     private GetSchemaVersionRequest getSchemaVersionRequest(String schemaVersionId) {
@@ -220,93 +248,53 @@ public class AWSSchemaRegistryClient {
     }
 
     /**
-     * Create a schema using the Glue client and return the response object
-     * @param schemaName Schema Name
-     * @param dataFormat Data Format
-     * @param schemaDefinition Schema Definition
-     * @param metadata schema version metadata
-     * @return           CreateSchemaResponse object
-     * @throws AWSSchemaRegistryException on any error during the schema creation
+     * Create a schema - NOT SUPPORTED in S3 mode.
+     * @param schemaName Schema Name - IGNORED
+     * @param dataFormat Data Format - IGNORED  
+     * @param schemaDefinition Schema Definition - IGNORED
+     * @param metadata schema version metadata - IGNORED
+     * @return           Never returns - always throws exception
+     * @throws AWSSchemaRegistryException S3 mode is read-only, schema creation not supported
      */
     public UUID createSchema(String schemaName,
                              String dataFormat,
                              String schemaDefinition,
                              Map<String, String> metadata) throws AWSSchemaRegistryException {
-        UUID schemaVersionId = null;
-        try {
-            log.info("Auto Creating schema with schemaName: {} and schemaDefinition : {}", schemaName,
-                      schemaDefinition);
-            CreateSchemaResponse createSchemaResponse =
-                    client.createSchema(getCreateSchemaRequestObject(schemaName, dataFormat, schemaDefinition));
-            schemaVersionId = UUID.fromString(createSchemaResponse.schemaVersionId());
-        } catch (AlreadyExistsException e) {
-            log.warn("Schema is already created, this could be caused by multiple producers racing to "
-                     + "auto-create schema.");
-            schemaVersionId = registerSchemaVersion(schemaDefinition, schemaName, dataFormat, metadata);
-        } catch (Exception e) {
-            String errorMessage = String.format(
-                    "Create schema :: Call failed when creating the schema with the schema registry for"
-                    + " schema name = %s", schemaName);
-            throw new AWSSchemaRegistryException(errorMessage, e);
-        }
-
-        putSchemaVersionMetadata(schemaVersionId, metadata);
-
-        return schemaVersionId;
+        throw new AWSSchemaRegistryException(
+            "createSchema is not supported in S3 mode. " +
+            "S3 mode is read-only. Schemas must be pre-uploaded to S3 via external process."
+        );
     }
 
     /**
-     * Register the schema and return schema version Id once it is available.
-     * @param schemaDefinition Schema Definition
-     * @param schemaName       Schema Name
-     * @param dataFormat       Data Format
-     * @param metadata         Metadata Map
-     * @return                 Unique schema version ID.
-     * @throws AWSSchemaRegistryException on any error during the registration and fetching of schema version
+     * Register the schema - NOT SUPPORTED in S3 mode.
+     * @param schemaDefinition Schema Definition - IGNORED
+     * @param schemaName       Schema Name - IGNORED
+     * @param dataFormat       Data Format - IGNORED
+     * @param metadata         Metadata Map - IGNORED
+     * @return                 Never returns - always throws exception
+     * @throws AWSSchemaRegistryException S3 mode is read-only, schema registration not supported
      */
     public UUID registerSchemaVersion(String schemaDefinition, String schemaName, String dataFormat, Map<String, String> metadata) {
-        GetSchemaVersionResponse getSchemaVersionResponse = registerSchemaVersion(schemaDefinition, schemaName, dataFormat);
-        UUID schemaVersionId = UUID.fromString(getSchemaVersionResponse.schemaVersionId());
-        putSchemaVersionMetadata(schemaVersionId, metadata);
-
-        return schemaVersionId;
+        throw new AWSSchemaRegistryException(
+            "registerSchemaVersion is not supported in S3 mode. " +
+            "S3 mode is read-only. Schemas must be pre-uploaded to S3 via external process."
+        );
     }
 
     /**
-     * Register the schema and return get schema version response once it is available.
-     * @param schemaDefinition Schema Definition
-     * @param schemaName       Schema Name
-     * @param dataFormat       Data Format
-     * @return                 GetSchemaVersionResponse object.
-     * @throws AWSSchemaRegistryException on any error during the registration and fetching of schema version
+     * Register the schema - NOT SUPPORTED in S3 mode.
+     * @param schemaDefinition Schema Definition - IGNORED
+     * @param schemaName       Schema Name - IGNORED
+     * @param dataFormat       Data Format - IGNORED
+     * @return                 Never returns - always throws exception
+     * @throws AWSSchemaRegistryException S3 mode is read-only, schema registration not supported
      */
     public GetSchemaVersionResponse registerSchemaVersion(String schemaDefinition, String schemaName, String dataFormat) throws AWSSchemaRegistryException {
-
-        GetSchemaVersionResponse schemaVersionResponse = null;
-
-        try {
-            RegisterSchemaVersionResponse registerSchemaVersionResponse =
-                    client.registerSchemaVersion(getRegisterSchemaVersionRequest(schemaDefinition, schemaName));
-
-            log.info("Registered the schema version with schema version id = {} and with version number = {} and "
-                     + "status {}", registerSchemaVersionResponse.schemaVersionId(),
-                     registerSchemaVersionResponse.versionNumber(), registerSchemaVersionResponse.statusAsString());
-
-            if (AWSSchemaRegistryConstants.SchemaVersionStatus.AVAILABLE.toString()
-                    .equals(registerSchemaVersionResponse.statusAsString())) {
-                return transformToGetSchemaVersionResponse(registerSchemaVersionResponse);
-            }
-
-            schemaVersionResponse = waitForSchemaEvolutionCheckToComplete(
-                    getGetSchemaVersionRequest(registerSchemaVersionResponse.schemaVersionId()));
-
-        } catch (Exception e) {
-            String errorMessage = String.format("Register schema :: Call failed when registering the schema with the schema registry for schema name = %s",
-                    schemaName);
-            throw new AWSSchemaRegistryException(errorMessage, e);
-        }
-
-        return schemaVersionResponse;
+        throw new AWSSchemaRegistryException(
+            "registerSchemaVersion is not supported in S3 mode. " +
+            "S3 mode is read-only. Schemas must be pre-uploaded to S3 via external process."
+        );
     }
 
     private GetSchemaVersionResponse transformToGetSchemaVersionResponse(RegisterSchemaVersionResponse registerSchemaVersionResponse) {
@@ -400,43 +388,31 @@ public class AWSSchemaRegistryClient {
     }
 
     /**
-     * Put metadata to schema version asynchronously
-     * @param schemaVersionId Schema Version Id
-     * @param metadata Metadata Map
+     * Put metadata to schema version - NOT SUPPORTED in S3 mode.
+     * @param schemaVersionId Schema Version Id - IGNORED
+     * @param metadata Metadata Map - IGNORED
+     * @throws AWSSchemaRegistryException S3 mode is read-only, metadata operations not supported
      */
     public void putSchemaVersionMetadata(UUID schemaVersionId, Map<String, String> metadata) {
-        metadata.entrySet()
-                .parallelStream()
-                .map(this::createMetadataKeyValuePair)
-                .forEach((metadataKeyValuePair -> {
-                    try {
-                        putSchemaVersionMetadata(schemaVersionId, metadataKeyValuePair);
-                    } catch (AWSSchemaRegistryException e) {
-                        log.warn(e.getMessage());
-                    }
-                }));
+        throw new AWSSchemaRegistryException(
+            "putSchemaVersionMetadata is not supported in S3 mode. " +
+            "S3 mode is read-only. Use S3 object tags for metadata instead."
+        );
     }
 
     /**
-     * Put metadata to schema version and return the response object
-     * @param schemaVersionId Schema Version Id
-     * @param metadataKeyValuePair Metadata Key Value Pair
-     * @return           PutSchemaVersionMetadataResponse object
-     * @throws AWSSchemaRegistryException on any error during putting metadata
+     * Put metadata to schema version - NOT SUPPORTED in S3 mode.
+     * @param schemaVersionId Schema Version Id - IGNORED
+     * @param metadataKeyValuePair Metadata Key Value Pair - IGNORED
+     * @return           Never returns - always throws exception
+     * @throws AWSSchemaRegistryException S3 mode is read-only, metadata operations not supported
      */
-    public PutSchemaVersionMetadataResponse putSchemaVersionMetadata(UUID schemaVersionId, MetadataKeyValuePair metadataKeyValuePair)
+    public Object putSchemaVersionMetadata(UUID schemaVersionId, MetadataKeyValuePair metadataKeyValuePair)
             throws AWSSchemaRegistryException {
-        PutSchemaVersionMetadataResponse response = null;
-        try {
-            response =
-                    client.putSchemaVersionMetadata(createPutSchemaVersionMetadataRequest(schemaVersionId, metadataKeyValuePair));
-        } catch (Exception e) {
-            String errorMessage =
-                    String.format("Put schema version metadata :: Call failed when put metadata key = %s value = %s to schema for schema version id = %s",
-                            metadataKeyValuePair.metadataKey(), metadataKeyValuePair.metadataValue(), schemaVersionId.toString());
-            throw new AWSSchemaRegistryException(errorMessage, e);
-        }
-        return response;
+        throw new AWSSchemaRegistryException(
+            "putSchemaVersionMetadata is not supported in S3 mode. " +
+            "S3 mode is read-only. Use S3 object tags for metadata instead."
+        );
     }
 
     private PutSchemaVersionMetadataRequest createPutSchemaVersionMetadataRequest(UUID schemaVersionId, MetadataKeyValuePair metadataKeyValuePair) {
@@ -456,23 +432,17 @@ public class AWSSchemaRegistryClient {
     }
 
     /**
-     * Query metadata for schema version and return the response object
+     * Query metadata for schema version - NOT SUPPORTED in S3 mode.
      *
-     * @param schemaVersionId Schema Version Id
-     * @return QuerySchemaVersionMetadataResponse object
-     * @throws AWSSchemaRegistryException on any error during putting metadata
+     * @param schemaVersionId Schema Version Id - IGNORED
+     * @return Never returns - always throws exception
+     * @throws AWSSchemaRegistryException S3 mode doesn't support metadata queries, use S3 object tags
      */
-    public QuerySchemaVersionMetadataResponse querySchemaVersionMetadata(UUID schemaVersionId) {
-        QuerySchemaVersionMetadataResponse response = null;
-        try {
-            response = client.querySchemaVersionMetadata(createQuerySchemaVersionMetadataRequest(schemaVersionId));
-        } catch (Exception e) {
-            String errorMessage = String.format("Query schema version metadata :: Call failed when query metadata for schema version id = %s",
-                    schemaVersionId.toString());
-            throw new AWSSchemaRegistryException(errorMessage, e);
-        }
-
-        return response;
+    public Object querySchemaVersionMetadata(UUID schemaVersionId) {
+        throw new AWSSchemaRegistryException(
+            "querySchemaVersionMetadata is not supported in S3 mode. " +
+            "Use S3 GetObjectTagging API to read object tags instead."
+        );
     }
 
     private QuerySchemaVersionMetadataRequest createQuerySchemaVersionMetadataRequest(UUID schemaVersionId) {
@@ -483,26 +453,17 @@ public class AWSSchemaRegistryClient {
     }
 
     /**
-     * Query Schema Tags Response for a given schema name and definition
-     * @param schemaDefinition  Schema Definition
-     * @param schemaName        Schema Name
-     * @return a GetTagsResponse with tags
+     * Query Schema Tags - NOT SUPPORTED in S3 mode.
+     * @param schemaDefinition  Schema Definition - IGNORED
+     * @param schemaName        Schema Name - IGNORED
+     * @return Never returns - always throws exception
+     * @throws AWSSchemaRegistryException S3 mode doesn't support schema lookup, use S3 object tags
      */
-    public GetTagsResponse querySchemaTags(String schemaDefinition, String schemaName) {
-        GetTagsResponse getTagsResponse = null;
-        try {
-            GetSchemaByDefinitionResponse getSchemaByDefinitionResponse = client.getSchemaByDefinition(
-                    buildGetSchemaByDefinitionRequest(schemaDefinition, schemaName));
-            GetTagsRequest getTagsRequest = GetTagsRequest.builder()
-                    .resourceArn(getSchemaByDefinitionResponse.schemaArn())
-                    .build();
-
-            getTagsResponse = client.getTags(getTagsRequest);
-        } catch (Exception e) {
-            String errorMessage = String.format("Query schema tags:: Call failed while querying tags for schema = %s", schemaName);
-            throw new AWSSchemaRegistryException(errorMessage, e);
-        }
-        return getTagsResponse;
+    public Object querySchemaTags(String schemaDefinition, String schemaName) {
+        throw new AWSSchemaRegistryException(
+            "querySchemaTags is not supported in S3 mode. " +
+            "Use S3 GetObjectTagging API to read schema object tags instead."
+        );
     }
 
     /**
@@ -557,5 +518,27 @@ public class AWSSchemaRegistryClient {
 
             return userAgentSuffix.toString();
         }
+    }
+
+    /**
+     * Build S3 key for schema.avsc file using configured prefix
+     */
+    private String buildS3SchemaKey() {
+        String prefix = glueSchemaRegistryConfiguration.getS3KeyPrefix();
+        if (prefix == null || prefix.isEmpty()) {
+            return "schema.avsc";
+        }
+        // Ensure proper path separator
+        return prefix.endsWith("/") ? prefix + "schema.avsc" : prefix + "/schema.avsc";
+    }
+
+    /**
+     * Extract tag value from S3 object tags
+     */
+    private Optional<String> getTagValue(GetObjectTaggingResponse taggingResponse, String tagKey) {
+        return taggingResponse.tagSet().stream()
+                .filter(tag -> tagKey.equals(tag.key()))
+                .map(Tag::value)
+                .findFirst();
     }
 }

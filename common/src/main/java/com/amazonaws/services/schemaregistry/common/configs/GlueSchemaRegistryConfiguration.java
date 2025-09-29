@@ -329,6 +329,11 @@ public class GlueSchemaRegistryConfiguration {
     private void validateAndSetS3Configuration(Map<String, ?> configs) {
         if (isPresent(configs, AWSSchemaRegistryConstants.S3_BUCKET_NAME)) {
             this.s3BucketName = String.valueOf(configs.get(AWSSchemaRegistryConstants.S3_BUCKET_NAME));
+            
+            // S3 mode is read-only - disable auto-registration to prevent errors
+            log.info("S3 bucket configured: {}. Disabling auto-registration (S3 mode is read-only)", this.s3BucketName);
+            this.schemaAutoRegistrationEnabled = false;
+            
         } else {
             throw new AWSSchemaRegistryException("S3 bucket name is required for S3-based schema registry");
         }
