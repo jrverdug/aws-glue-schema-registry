@@ -183,6 +183,16 @@ public final class AWSSchemaRegistryConstants {
     public static final String ASSUME_ROLE_SESSION_NAME = "assumeRoleSessionName";
 
     /**
+     * S3 bucket name for schema storage
+     */
+    public static final String S3_BUCKET_NAME = "s3BucketName";
+
+    /**
+     * S3 key prefix for organizing schemas (optional)
+     */
+    public static final String S3_KEY_PREFIX = "s3KeyPrefix";
+
+    /**
      * Private constructor to avoid initialization of the class.
      */
 

@@ -58,6 +58,8 @@ public class GlueSchemaRegistryConfiguration {
     private Map<String, String> metadata;
     private String secondaryDeserializer;
     private URI proxyUrl;
+    private String s3BucketName;
+    private String s3KeyPrefix;
 
     /**
      * Name of the application using the serializer/deserializer.
@@ -104,6 +106,7 @@ public class GlueSchemaRegistryConfiguration {
         validateAndSetUserAgent(configs);
         validateAndSetSecondaryDeserializer(configs);
         validateAndSetProxyUrl(configs);
+        validateAndSetS3Configuration(configs);
     }
 
     private void validateAndSetSecondaryDeserializer(Map<String, ?> configs) {
@@ -320,6 +323,20 @@ public class GlueSchemaRegistryConfiguration {
             } else {
                 throw new AWSSchemaRegistryException("Jackson Deserialization features should be a list");
             }
+        }
+    }
+
+    private void validateAndSetS3Configuration(Map<String, ?> configs) {
+        if (isPresent(configs, AWSSchemaRegistryConstants.S3_BUCKET_NAME)) {
+            this.s3BucketName = String.valueOf(configs.get(AWSSchemaRegistryConstants.S3_BUCKET_NAME));
+        } else {
+            throw new AWSSchemaRegistryException("S3 bucket name is required for S3-based schema registry");
+        }
+
+        if (isPresent(configs, AWSSchemaRegistryConstants.S3_KEY_PREFIX)) {
+            this.s3KeyPrefix = String.valueOf(configs.get(AWSSchemaRegistryConstants.S3_KEY_PREFIX));
+        } else {
+            this.s3KeyPrefix = "";
         }
     }
 

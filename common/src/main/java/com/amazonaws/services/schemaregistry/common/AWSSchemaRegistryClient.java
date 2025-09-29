@@ -34,28 +34,17 @@ import software.amazon.awssdk.core.retry.RetryPolicy;
 import software.amazon.awssdk.http.urlconnection.ProxyConfiguration;
 import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient;
 import software.amazon.awssdk.regions.Region;
-import software.amazon.awssdk.services.glue.GlueClient;
-import software.amazon.awssdk.services.glue.GlueClientBuilder;
-import software.amazon.awssdk.services.glue.model.AlreadyExistsException;
-import software.amazon.awssdk.services.glue.model.CreateSchemaRequest;
-import software.amazon.awssdk.services.glue.model.CreateSchemaResponse;
-import software.amazon.awssdk.services.glue.model.DataFormat;
-import software.amazon.awssdk.services.glue.model.GetSchemaByDefinitionRequest;
-import software.amazon.awssdk.services.glue.model.GetSchemaByDefinitionResponse;
-import software.amazon.awssdk.services.glue.model.GetSchemaVersionRequest;
 import software.amazon.awssdk.services.glue.model.GetSchemaVersionResponse;
-import software.amazon.awssdk.services.glue.model.GetTagsRequest;
-import software.amazon.awssdk.services.glue.model.GetTagsResponse;
-import software.amazon.awssdk.services.glue.model.GlueRequest;
 import software.amazon.awssdk.services.glue.model.MetadataKeyValuePair;
-import software.amazon.awssdk.services.glue.model.PutSchemaVersionMetadataRequest;
-import software.amazon.awssdk.services.glue.model.PutSchemaVersionMetadataResponse;
-import software.amazon.awssdk.services.glue.model.QuerySchemaVersionMetadataRequest;
 import software.amazon.awssdk.services.glue.model.QuerySchemaVersionMetadataResponse;
-import software.amazon.awssdk.services.glue.model.RegisterSchemaVersionRequest;
-import software.amazon.awssdk.services.glue.model.RegisterSchemaVersionResponse;
-import software.amazon.awssdk.services.glue.model.RegistryId;
-import software.amazon.awssdk.services.glue.model.SchemaId;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.S3ClientBuilder;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectResponse;
+import software.amazon.awssdk.services.s3.model.GetObjectTaggingRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectTaggingResponse;
+import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
+import software.amazon.awssdk.services.s3.model.Tag;
 
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -72,7 +61,7 @@ public class AWSSchemaRegistryClient {
     private static final int MAX_ATTEMPTS = 10;
     private static final long MAX_WAIT_INTERVAL = 3000;
 
-    private final GlueClient client;
+    private final S3Client s3Client;
     private GlueSchemaRegistryConfiguration glueSchemaRegistryConfiguration;
 
     /**
