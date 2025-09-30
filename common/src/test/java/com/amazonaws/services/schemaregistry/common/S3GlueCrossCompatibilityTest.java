@@ -88,9 +88,7 @@ public class S3GlueCrossCompatibilityTest {
     }
 
     @Test
-    public void testDeserializeGlueSerializedRecordWithS3ClientSucceeds() throws Exception {
-        String expectedS3Key = S3_KEY_PREFIX + "/" + SCHEMA_VERSION + "/schema.avsc";
-        
+    public void testDeserializeGlueSerializedRecordWithS3ClientSucceeds() {
         ResponseInputStream<GetObjectResponse> schemaStream = new ResponseInputStream<>(
             GetObjectResponse.builder().build(),
             AbortableInputStream.create(new ByteArrayInputStream(TEST_SCHEMA_DEFINITION.getBytes(StandardCharsets.UTF_8)))
@@ -116,9 +114,7 @@ public class S3GlueCrossCompatibilityTest {
     }
 
     @Test
-    public void testGetSchemaVersionIdByDefinitionWithS3ClientReturnsGlueCompatibleUUID() throws Exception {
-        String expectedS3Key = S3_KEY_PREFIX + "/" + SCHEMA_VERSION + "/schema.avsc";
-        
+    public void testGetSchemaVersionIdByDefinitionWithS3ClientReturnsGlueCompatibleUUID() {
         GetObjectTaggingResponse taggingResponse = GetObjectTaggingResponse.builder()
             .tagSet(Tag.builder()
                 .key("gsr-version-id")
@@ -163,7 +159,7 @@ public class S3GlueCrossCompatibilityTest {
     }
 
     @Test
-    public void testMagicBytesCompatibilitySameUUIDFromGlueAndS3() throws Exception {
+    public void testMagicBytesCompatibilitySameUUIDFromGlueAndS3() {
         ResponseInputStream<GetObjectResponse> schemaStream = new ResponseInputStream<>(
             GetObjectResponse.builder().build(),
             AbortableInputStream.create(new ByteArrayInputStream(TEST_SCHEMA_DEFINITION.getBytes(StandardCharsets.UTF_8)))
