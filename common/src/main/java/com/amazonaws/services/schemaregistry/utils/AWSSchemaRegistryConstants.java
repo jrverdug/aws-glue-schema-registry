@@ -193,6 +193,11 @@ public final class AWSSchemaRegistryConstants {
     public static final String S3_KEY_PREFIX = "s3KeyPrefix";
 
     /**
+     * S3 schema version number (required)
+     */
+    public static final String SCHEMA_VERSION = "schemaVersion";
+
+    /**
      * Private constructor to avoid initialization of the class.
      */
 

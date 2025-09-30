@@ -111,22 +111,42 @@ public class AWSSchemaRegistryClient {
     }
 
     /**
-     * Get Schema Version ID by passing the schema definition.
+     * Get Schema Version ID from S3 object tags.
+     * In S3 mode, schema parameters are ignored and UUID is fetched from configured S3 location.
      * 
      * @param schemaDefinition Schema Definition - IGNORED in S3 mode
      * @param schemaName       Schema Name - IGNORED in S3 mode  
      * @param dataFormat       Data Format - IGNORED in S3 mode
      * @return                 Schema Version ID from S3 gsr-version-id tag
-     * @throws AWSSchemaRegistryException S3 mode doesn't support schema lookup by definition.
-     *                                   Use getSchemaVersionResponse() to fetch from S3.
+     * @throws AWSSchemaRegistryException on errors fetching from S3
      */
     public UUID getSchemaVersionIdByDefinition(@NonNull String schemaDefinition, @NonNull String schemaName,
                                                @NonNull String dataFormat) throws AWSSchemaRegistryException {
-        throw new AWSSchemaRegistryException(
-            "getSchemaVersionIdByDefinition is not supported in S3 mode. " +
-            "S3 mode is read-only and fetches schema from a fixed location. " +
-            "Use getSchemaVersionResponse() to fetch schema from S3 instead."
-        );
+        try {
+            String s3Key = buildS3SchemaKey();
+            
+            log.debug("Fetching schema version ID from S3: s3://{}/{}", 
+                    glueSchemaRegistryConfiguration.getS3BucketName(), s3Key);
+            
+            GetObjectTaggingRequest taggingRequest = GetObjectTaggingRequest.builder()
+                    .bucket(glueSchemaRegistryConfiguration.getS3BucketName())
+                    .key(s3Key)
+                    .build();
+            
+            GetObjectTaggingResponse taggingResponse = s3Client.getObjectTagging(taggingRequest);
+            String gsrVersionId = getTagValue(taggingResponse, "gsr-version-id")
+                    .orElseThrow(() -> new AWSSchemaRegistryException("gsr-version-id tag not found on S3 object"));
+
+            return UUID.fromString(gsrVersionId);
+
+        } catch (NoSuchKeyException e) {
+            String errorMessage = String.format("Schema file not found in S3: s3://%s/%s", 
+                    glueSchemaRegistryConfiguration.getS3BucketName(), buildS3SchemaKey());
+            throw new AWSSchemaRegistryException(errorMessage, e);
+        } catch (Exception e) {
+            String errorMessage = String.format("Failed to get schema version ID from S3: %s", e.getMessage());
+            throw new AWSSchemaRegistryException(errorMessage, e);
+        }
     }
 
     /**
@@ -291,15 +311,33 @@ public class AWSSchemaRegistryClient {
 
 
     /**
-     * Build S3 key for schema.avsc file using configured prefix
+     * Build S3 key for schema.avsc file using configured prefix and version.
+     * 
+     * Format: {prefix}/{version}/schema.avsc
+     * Example: kafka_schema_registry/DemoSchemasV1/1/schema.avsc
      */
     private String buildS3SchemaKey() {
         String prefix = glueSchemaRegistryConfiguration.getS3KeyPrefix();
-        if (prefix == null || prefix.isEmpty()) {
-            return "schema.avsc";
+        String version = glueSchemaRegistryConfiguration.getSchemaVersion();
+        
+        StringBuilder keyBuilder = new StringBuilder();
+        
+        // Add prefix if present
+        if (prefix != null && !prefix.isEmpty()) {
+            keyBuilder.append(prefix);
+            if (!prefix.endsWith("/")) {
+                keyBuilder.append("/");
+            }
         }
-        // Ensure proper path separator
-        return prefix.endsWith("/") ? prefix + "schema.avsc" : prefix + "/schema.avsc";
+        
+        // Add version
+        keyBuilder.append(version);
+        keyBuilder.append("/");
+        
+        // Add filename
+        keyBuilder.append("schema.avsc");
+        
+        return keyBuilder.toString();
     }
 
     /**

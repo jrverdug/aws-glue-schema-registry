@@ -60,6 +60,7 @@ public class GlueSchemaRegistryConfiguration {
     private URI proxyUrl;
     private String s3BucketName;
     private String s3KeyPrefix;
+    private String schemaVersion;
 
     /**
      * Name of the application using the serializer/deserializer.
@@ -342,6 +343,12 @@ public class GlueSchemaRegistryConfiguration {
             this.s3KeyPrefix = String.valueOf(configs.get(AWSSchemaRegistryConstants.S3_KEY_PREFIX));
         } else {
             this.s3KeyPrefix = "";
+        }
+
+        if (isPresent(configs, AWSSchemaRegistryConstants.SCHEMA_VERSION)) {
+            this.schemaVersion = String.valueOf(configs.get(AWSSchemaRegistryConstants.SCHEMA_VERSION));
+        } else {
+            throw new AWSSchemaRegistryException("Schema version is required for S3-based schema registry");
         }
     }
 
