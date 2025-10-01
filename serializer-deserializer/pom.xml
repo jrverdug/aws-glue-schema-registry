@@ -20,30 +20,30 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>${parent.groupId}</groupId>
-    <artifactId>schema-registry-serde</artifactId>
-    <name>AWS Glue Schema Registry Serializer Deserializer</name>
-    <description>The AWS Glue Schema Registry Serializer/Deserializer enables Java developers to easily integrate
-        their Apache Kafka and AWS Kinesis applications with AWS Glue Schema Registry
+    <artifactId>aws-s3-schema-registry</artifactId>
+    <name>AWS S3 Schema Registry Serializer Deserializer</name>
+    <description>S3-based Schema Registry Serializer/Deserializer for Apache Kafka and AWS Kinesis applications.
+        Maintains wire format compatibility with AWS Glue Schema Registry.
     </description>
-    <url>https://aws.amazon.com/glue</url>
+    
     <version>${parent.version}</version>
     <packaging>jar</packaging>
 
     <parent>
-        <groupId>software.amazon.glue</groupId>
-        <artifactId>schema-registry-parent</artifactId>
+        <groupId>com.twilio</groupId>
+        <artifactId>aws-s3-schema-registry-parent</artifactId>
         <version>1.1.25</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
     <distributionManagement>
         <snapshotRepository>
-            <id>ossrh</id>
-            <url>https://aws.oss.sonatype.org/content/repositories/snapshots</url>
+            <id>twilio.nexus</id>
+            <url>https://nexus.corp.twilio.com/content/repositories/snapshots</url>
         </snapshotRepository>
         <repository>
-            <id>ossrh</id>
-            <url>https://aws.oss.sonatype.org/service/local/staging/deploy/maven2/</url>
+            <id>twilio.nexus</id>
+            <url>https://nexus.corp.twilio.com/content/repositories/releases</url>
         </repository>
     </distributionManagement>
     <licenses>
@@ -53,11 +53,6 @@
             <distribution>repo</distribution>
         </license>
     </licenses>
-    <scm>
-        <connection>scm:git:https://github.com/aws/aws-glue-schema-registry.git</connection>
-        <developerConnection>scm:git:git@github.com:aws/aws-glue-schema-registry.git</developerConnection>
-        <url>https://github.com/awslabs/aws-glue-schema-registry.git</url>
-    </scm>
 
     <dependencies>
         <dependency>
@@ -72,7 +67,7 @@
         </dependency>
         <dependency>
             <groupId>${parent.groupId}</groupId>
-            <artifactId>schema-registry-common</artifactId>
+            <artifactId>aws-s3-schema-registry-common</artifactId>
             <version>${parent.version}</version>
         </dependency>
         <dependency>

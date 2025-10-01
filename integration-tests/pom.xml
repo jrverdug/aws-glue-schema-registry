@@ -26,31 +26,26 @@
     <description>The AWS Glue Schema Registry tests would do a sanity check for the schema registry library.
     </description>
     <packaging>jar</packaging>
-    <url>https://aws.amazon.com/glue</url>
+    
 
     <parent>
-        <groupId>software.amazon.glue</groupId>
-        <artifactId>schema-registry-parent</artifactId>
+        <groupId>com.twilio</groupId>
+        <artifactId>aws-s3-schema-registry-parent</artifactId>
         <version>1.1.25</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
     <distributionManagement>
         <snapshotRepository>
-            <id>ossrh</id>
-            <url>https://aws.oss.sonatype.org/content/repositories/snapshots</url>
+            <id>twilio.nexus</id>
+            <url>https://nexus.corp.twilio.com/content/repositories/snapshots</url>
         </snapshotRepository>
         <repository>
-            <id>ossrh</id>
-            <url>https://aws.oss.sonatype.org/service/local/staging/deploy/maven2/</url>
+            <id>twilio.nexus</id>
+            <url>https://nexus.corp.twilio.com/content/repositories/releases</url>
         </repository>
     </distributionManagement>
 
-    <scm>
-        <connection>scm:git:https://github.com/aws/aws-glue-schema-registry.git</connection>
-        <developerConnection>scm:git:git@github.com:aws/aws-glue-schema-registry.git</developerConnection>
-        <url>https://github.com/awslabs/aws-glue-schema-registry.git</url>
-    </scm>
 
     <licenses>
         <license>
@@ -62,12 +57,12 @@
 
     <dependencies>
         <dependency>
-            <groupId>software.amazon.glue</groupId>
-            <artifactId>schema-registry-serde</artifactId>
+            <groupId>com.twilio</groupId>
+            <artifactId>aws-s3-schema-registry</artifactId>
             <version>${parent.version}</version>
         </dependency>
         <dependency>
-            <groupId>software.amazon.glue</groupId>
+            <groupId>com.twilio</groupId>
             <artifactId>schema-registry-kafkastreams-serde</artifactId>
             <version>${parent.version}</version>
         </dependency>
@@ -189,8 +184,8 @@
     	</dependency>
         <!-- Dependency on test jar for test data -->
         <dependency>
-            <groupId>software.amazon.glue</groupId>
-            <artifactId>schema-registry-serde</artifactId>
+            <groupId>com.twilio</groupId>
+            <artifactId>aws-s3-schema-registry</artifactId>
             <version>${parent.version}</version>
             <type>test-jar</type>
             <scope>test</scope>

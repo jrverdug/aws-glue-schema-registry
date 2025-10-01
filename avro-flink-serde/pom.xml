@@ -19,14 +19,14 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>software.amazon.glue</groupId>
+    <groupId>com.twilio</groupId>
     <artifactId>schema-registry-flink-serde</artifactId>
     <version>1.1.25</version>
     <name>AWS Glue Schema Registry Flink Avro Serialization Deserialization Schema</name>
     <description>The AWS Glue Schema Registry Library for Apache Flink enables Java developers to easily integrate
         their Apache Flink applications with AWS Glue Schema Registry
     </description>
-    <url>https://aws.amazon.com/glue</url>
+    
     <packaging>jar</packaging>
 
     <developers>
@@ -48,24 +48,19 @@
     </licenses>
     <distributionManagement>
         <snapshotRepository>
-            <id>ossrh</id>
-            <url>https://aws.oss.sonatype.org/content/repositories/snapshots</url>
+            <id>twilio.nexus</id>
+            <url>https://nexus.corp.twilio.com/content/repositories/snapshots</url>
         </snapshotRepository>
         <repository>
-            <id>ossrh</id>
-            <url>https://aws.oss.sonatype.org/service/local/staging/deploy/maven2/</url>
+            <id>twilio.nexus</id>
+            <url>https://nexus.corp.twilio.com/content/repositories/releases</url>
         </repository>
     </distributionManagement>
-    <scm>
-        <connection>scm:git:https://github.com/aws/aws-glue-schema-registry.git</connection>
-        <developerConnection>scm:git:git@github.com:aws/aws-glue-schema-registry.git</developerConnection>
-        <url>https://github.com/awslabs/aws-glue-schema-registry.git</url>
-    </scm>
 
     <dependencies>
         <dependency>
-            <groupId>software.amazon.glue</groupId>
-            <artifactId>schema-registry-serde</artifactId>
+            <groupId>com.twilio</groupId>
+            <artifactId>aws-s3-schema-registry</artifactId>
             <version>1.1.25</version>
         </dependency>
         <dependency>
@@ -76,9 +71,9 @@
         </dependency>
 
         <dependency>
-            <groupId>software.amazon.glue</groupId>
-            <artifactId>schema-registry-serde</artifactId>
-            <version>1.0.2</version>
+            <groupId>com.twilio</groupId>
+            <artifactId>aws-s3-schema-registry</artifactId>
+            <version>1.1.25</version>
             <classifier>tests</classifier>
             <type>test-jar</type>
             <scope>test</scope>
