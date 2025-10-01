@@ -6,7 +6,7 @@
 # DEVELOPMENT_VERSION=1.1.26-SNAPSHOT
 #
 # Will result in aws-glue-schema-registry-s3 being pushed to Nexus as release
-# 1.1.25 *AND* the pom.xml pushed to master branch will be 1.1.26-SNAPSHOT.
+# 1.1.25 *AND* the pom.xml pushed to main branch will be 1.1.26-SNAPSHOT.
 #
 ##
 steps:
@@ -44,7 +44,6 @@ steps:
       - set_version
 
   - label: "Build and Test :maven:"
-    depends_on: git_push
     key: build
     artifact_paths:
       - "./*/target/surefire-reports/*.xml"
@@ -55,15 +54,25 @@ steps:
           propagate-environment: true
     command: "mvn clean verify -pl common,serializer-deserializer"
 
-  - label: "Deploy to Nexus :package: :rocket:"
+  - label: "Deploy Snapshot to Nexus :package:"
     depends_on: build
-    key: deploy
+    key: deploy-snapshot
     plugins:
       - docker#v5.3.0:
           image: registry.twilio.com/library/java/build-maven-jdk21-zulu
           propagate-environment: true
-    command: "mvn deploy -DskipTests -pl common,serializer-deserializer"
-    branches: master
+    command: "mvn deploy -DskipTests -pl build-tools,common,serializer-deserializer"
+    branches: "!main"
+
+  - label: "Deploy Release to Nexus :package: :rocket:"
+    depends_on: build
+    key: deploy-release
+    plugins:
+      - docker#v5.3.0:
+          image: registry.twilio.com/library/java/build-maven-jdk21-zulu
+          propagate-environment: true
+    command: "mvn deploy -DskipTests -pl build-tools,common,serializer-deserializer"
+    branches: main
 
   - label: "Test coverage Report"
     plugins:
