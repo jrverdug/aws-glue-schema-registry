@@ -1,0 +1,82 @@
+##
+# To Release set RELEASE_VERSION and DEVELOPMENT_VERSION in environment
+# variables in the Build Dialog in BuildKite. For example:
+#
+# RELEASE_VERSION=1.1.25
+# DEVELOPMENT_VERSION=1.1.26-SNAPSHOT
+#
+# Will result in aws-glue-schema-registry-s3 being pushed to Nexus as release
+# 1.1.25 *AND* the pom.xml pushed to master branch will be 1.1.26-SNAPSHOT.
+#
+##
+steps:
+  - label: "Set Version"
+    plugins:
+      - ssh://git@code.hq.twilio.com/twilio/bump-version-buildkite-plugin.git#${TWILIO_BUMP_VERSION_PLUGIN_VERSION?}:
+          action: calculate_maven_version
+    key: set_version
+    if: build.env("RELEASE_VERSION") != null
+
+  ##
+  # The BUMP_VERSION variable will be used for both release version and development version and be
+  # executed twice.
+  ##
+  - label: "Bump the version"
+    key: bump_version
+    command: >
+      docker run --rm -w "\$PWD" -v "\$PWD:\$PWD"
+      registry.twilio.com/library/java/build-maven-jdk21-zulu
+      mvn versions:set -DgenerateBackupPoms=false -DnewVersion=\$BUMP_VERSION
+    plugins:
+      - ssh://git@code.hq.twilio.com/twilio/bump-version-buildkite-plugin.git#${TWILIO_BUMP_VERSION_PLUGIN_VERSION?}:
+          action: bump_version
+    if: build.env("RELEASE_VERSION") != null
+    depends_on: set_version
+
+  - label: "Pushing RELEASE_VERSION to code.hq"
+    key: git_push
+    plugins:
+      - ssh://git@code.hq.twilio.com/twilio/bump-version-buildkite-plugin.git#${TWILIO_BUMP_VERSION_PLUGIN_VERSION?}:
+          action: push
+    if: build.env("RELEASE_VERSION") != null
+    depends_on:
+      - bump_version
+      - set_version
+
+  - label: "Build and Test :maven:"
+    depends_on: git_push
+    key: build
+    artifact_paths:
+      - "./*/target/surefire-reports/*.xml"
+      - "./*/target/failsafe-reports/*.xml"
+    plugins:
+      - docker#v5.3.0:
+          image: registry.twilio.com/library/java/build-maven-jdk21-zulu
+          propagate-environment: true
+    command: "mvn clean verify -pl common,serializer-deserializer"
+
+  - label: "Deploy to Nexus :package: :rocket:"
+    depends_on: build
+    key: deploy
+    plugins:
+      - docker#v5.3.0:
+          image: registry.twilio.com/library/java/build-maven-jdk21-zulu
+          propagate-environment: true
+    command: "mvn deploy -DskipTests -pl common,serializer-deserializer"
+    branches: master
+
+  - label: "Test coverage Report"
+    plugins:
+      - junit-annotate#v2.4.1:
+          artifacts: "*/target/*-reports/*.xml"
+    allow_dependency_failure: true
+    depends_on: build
+
+  - label: "Test Analytics"
+    command: "buildkite-agent artifact download '**/*.xml' . --step build"
+    plugins:
+      - test-collector#v1.6.0:
+          files: "**/*.xml"
+          format: "junit"
+    allow_dependency_failure: true
+    depends_on: build
